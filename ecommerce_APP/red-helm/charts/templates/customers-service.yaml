@@ -1,0 +1,17 @@
+# Service pour le déploiement customers
+apiVersion: v1
+kind: Service
+metadata:
+  name: customers-service
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: customers
+spec:
+  type: {{ .Values.customers.service.type | default "ClusterIP" }}
+  ports:
+    - port: {{ .Values.customers.service.port | default 8001 }}
+      targetPort: {{ .Values.customers.service.targetPort | default 8001 }}
+      protocol: TCP
+      name: http
+  selector:
+    app: customers

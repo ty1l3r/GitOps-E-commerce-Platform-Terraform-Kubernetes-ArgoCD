@@ -1,0 +1,73 @@
+{{- if eq .Values.namespace "production" }}
+---
+# StorageClass pour RabbitMQ
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: rabbitmq-storage-class
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+    storageclass.kubernetes.io/is-default-class: "false"
+provisioner: ebs.csi.aws.com
+volumeBindingMode: WaitForFirstConsumer
+parameters:
+  type: gp3
+  encrypted: "false"
+allowVolumeExpansion: true
+
+---
+# Volume RabbitMQ
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: rabbitmq-pv
+  labels:
+    app: rabbitmq
+    type: primary
+    storage: rabbitmq
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  capacity:
+    storage: 3Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: rabbitmq-storage-class
+  csi:
+    driver: ebs.csi.aws.com
+    volumeHandle: {{ .Values.rabbitmq.storage.volumes.primary.volumeId }}
+    fsType: ext4
+    volumeAttributes:
+      type: gp3
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: topology.kubernetes.io/zone
+          operator: In
+          values:
+          - {{ .Values.rabbitmq.storage.volumes.primary.az }}
+
+---
+# PVC RabbitMQ
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rabbitmq-pvc
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: rabbitmq
+    type: primary
+    storage: rabbitmq
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rabbitmq-storage-class
+  volumeName: rabbitmq-pv
+  resources:
+    requests:
+      storage: 3Gi
+{{- end }}

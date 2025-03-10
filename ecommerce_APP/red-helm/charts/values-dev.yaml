@@ -1,0 +1,176 @@
+namespace: "dev"
+
+certificate:
+  name: example-dev-tls
+  secretName: example-dev-tls
+  issuerRef:
+    name: letsencrypt-example
+    kind: ClusterIssuer
+
+certManager:
+  enabled: true
+  email: example@example.com
+  namespace: cert-manager
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+
+# Configuration pour l'ingress
+ingress:
+  namespace: ingress-nginx
+  host: dev.example.com
+  tls: true
+
+app:
+  replicaCount: 1
+  image:
+    repository: ""
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 80
+  resources:
+    limits:
+      cpu: "500m"
+      memory: "1Gi"
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+
+products:
+  replicaCount: 1
+  image:
+    repository: ""
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8002
+    targetPort: 8002
+  resources:
+    limits:
+      cpu: "100m"
+      memory: "256Mi"
+    requests:
+      cpu: "50m"
+      memory: "128Mi"
+  env:
+    NODE_ENV: "dev"
+    CUSTOMER_SERVICE: "http://customers-service.dev.svc.cluster.local:8001"
+    SHOPPING_SERVICE: "http://shopping-service.dev.svc.cluster.local:8003"
+    MONGODB_URI: "mongodb://mongo-products-service:27017/products_db"
+    PORT: 8002
+    BASE_URL: "http://products-service.dev.svc.cluster.local:8002/"
+    EXCHANGE_NAME: "ONLINE_STORE"
+    RABBITMQ_SERVICE: "rabbitmq-dev.dev.svc.cluster.local:5672"
+
+# Configuration pour le microservice shopping
+shopping:
+  replicaCount: 1
+  image:
+    repository: ""
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8003
+    targetPort: 8003
+  resources:
+    limits:
+      cpu: "100m"
+      memory: "256Mi"
+    requests:
+      cpu: "50m"
+      memory: "128Mi"
+  env:
+    NODE_ENV: "dev"
+    CUSTOMER_SERVICE: "http://customers-service.dev.svc.cluster.local:8001"
+    SHOPPING_SERVICE: "http://shopping-service.dev.svc.cluster.local:8003"
+    MONGODB_URI: "mongodb://mongo-shopping-service:27017/shopping_db"
+    PORT: 8003
+    BASE_URL: "http://shopping-service.dev.svc.cluster.local:8003/"
+    EXCHANGE_NAME: "ONLINE_STORE"
+    RABBITMQ_SERVICE: "rabbitmq-dev.dev.svc.cluster.local:5672"
+
+# Configuration pour le microservice customers
+customers:
+  replicaCount: 1
+  image:
+    repository: ""
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8001
+    targetPort: 8001
+  resources:
+    limits:
+      cpu: "200m"
+      memory: "512Mi"
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+  env:
+    NODE_ENV: "dev"
+    MONGODB_URI: "mongodb://mongo-customers-service:27017/customers_db"
+    EXCHANGE_NAME: "ONLINE_STORE"
+    PORT: 8001
+    BASE_URL: "http://customers-service.dev.svc.cluster.local:8001/"
+    CUSTOMER_SERVICE: "http://customers-service.dev.svc.cluster.local:8001"
+    SHOPPING_SERVICE: "http://shopping-service.dev.svc.cluster.local:8003"
+    RABBITMQ_SERVICE: "rabbitmq-dev.dev.svc.cluster.local:5672"
+
+# Configuration pour la base de données MongoDB pour customers
+mongoCusto:
+  name: "mongo-customers"
+  image: "mongo:4.4"
+  replicaCount: 1
+  port: 27017
+  resources:
+    limits:
+      cpu: "100m"
+      memory: "256Mi"
+    requests:
+      cpu: "50m"
+      memory: "128Mi"
+  storage:
+    size: "1Gi"
+    accessMode: "ReadWriteOnce"
+
+# Configuration pour la base de données MongoDB pour shopping
+mongoShop:
+  name: "mongo-shopping"
+  image: "mongo:4.4"
+  replicaCount: 1
+  port: 27017
+  resources:
+    limits:
+      cpu: "150m"
+      memory: "256Mi"
+    requests:
+      cpu: "50m"
+      memory: "128Mi"
+  storage:
+    size: "1Gi"
+    accessMode: "ReadWriteOnce"
+
+# Configuration pour la base de données MongoDB pour products
+mongoProd:
+  name: "mongo-products"
+  image: "mongo:4.4"
+  replicaCount: 1
+  port: 27017
+  resources:
+    limits:
+      cpu: "150m"
+      memory: "256Mi"
+    requests:
+      cpu: "50m"
+      memory: "128Mi"
+  storage:
+    size: "1Gi"
+    accessMode: "ReadWriteOnce"
+

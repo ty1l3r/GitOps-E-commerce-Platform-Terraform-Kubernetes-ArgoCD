@@ -1,0 +1,73 @@
+#=========================================================================
+# ServiceMonitor pour les bases de données MongoDB
+#=========================================================================
+# Configuration du monitoring des instances MongoDB en production.
+#
+# Métriques surveillées:
+# - mongodb_connections: nombre de connexions actives
+# - mongodb_operations: opérations read/write
+# - mongodb_memory: utilisation mémoire
+# - mongodb_replication: état de la réplication
+#
+# Fréquence de collecte: 30 secondes
+#=========================================================================
+
+{{- if eq .Values.namespace "production" }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: mongodb-shopping-monitor
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: mongodb-shopping
+spec:
+  selector:
+    matchLabels:
+      app: mongodb-shopping
+  endpoints:
+    - port: metrics
+      interval: 30s
+      metricRelabelings:
+        - sourceLabels: [__name__]
+          regex: 'mongodb_(connections|operations|memory|replication).*'
+          action: keep
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: mongodb-customers-monitor
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: mongodb-customers
+spec:
+  selector:
+    matchLabels:
+      app: mongodb-customers
+  endpoints:
+    - port: metrics
+      interval: 30s
+      metricRelabelings:
+        - sourceLabels: [__name__]
+          regex: 'mongodb_(connections|operations|memory|replication).*'
+          action: keep
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: mongodb-products-monitor
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: mongodb-products
+spec:
+  selector:
+    matchLabels:
+      app: mongodb-products
+  endpoints:
+    - port: metrics
+      interval: 30s
+      metricRelabelings:
+        - sourceLabels: [__name__]
+          regex: 'mongodb_(connections|operations|memory|replication).*'
+          action: keep
+{{- end }}

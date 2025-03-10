@@ -1,0 +1,122 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: customers
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: customers
+    {{- if eq .Values.namespace "production" }}
+    tier: backend
+    environment: production
+    {{- end }}
+spec:
+  replicas: {{ .Values.customers.replicaCount }}
+  selector:
+    matchLabels:
+      app: customers
+  template:
+    metadata:
+      labels:
+        app: customers
+    spec:
+      {{- if eq .Values.namespace "production" }}
+      # Configuration haute disponibilité pour productionrvrvrvrv
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - customers
+                topologyKey: topology.kubernetes.io/zone
+      # Tolérations pour les noeuds production
+      tolerations:
+        - key: "env"
+          operator: "Equal"
+          value: "production"
+          effect: "NoSchedule"
+      {{- end }}
+      imagePullSecrets:
+        - name: gitlab-registry-secret
+      containers:
+        - name: customers
+          image: "{{ .Values.customers.image.repository }}:{{ .Values.customers.image.tag }}"
+          imagePullPolicy: "{{ .Values.customers.image.pullPolicy }}"
+
+          {{- if eq .Values.namespace "production" }}
+          # Healthchecks production
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.customers.livenessProbe.path }}
+              port: {{ .Values.customers.livenessProbe.port }}
+            initialDelaySeconds: {{ .Values.customers.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.customers.livenessProbe.periodSeconds }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.customers.readinessProbe.path }}
+              port: {{ .Values.customers.readinessProbe.port }}
+            initialDelaySeconds: {{ .Values.customers.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.customers.readinessProbe.periodSeconds }}
+          {{- end }}
+
+          ports:
+            - containerPort: {{ .Values.customers.service.targetPort }}
+          env:
+            # Variables d'environnement existantes
+            - name: NODE_ENV
+              value: "{{ .Values.customers.env.NODE_ENV }}"
+            - name: MONGODB_URI
+              value: "{{ .Values.customers.env.MONGODB_URI }}"
+            - name: EXCHANGE_NAME
+              value: "{{ .Values.customers.env.EXCHANGE_NAME }}"
+            - name: PORT
+              value: "{{ .Values.customers.env.PORT }}"
+            - name: BASE_URL
+              value: "{{ .Values.customers.env.BASE_URL }}"
+            - name: CUSTOMER_SERVICE
+              value: "{{ .Values.customers.env.CUSTOMER_SERVICE }}"
+            - name: SHOPPING_SERVICE
+              value: "{{ .Values.customers.env.SHOPPING_SERVICE }}"
+            - name: RABBITMQ_SERVICE
+              value: "{{ .Values.customers.env.RABBITMQ_SERVICE }}"
+
+            # Variables sensibles existantes
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.namespace }}-secrets
+                  key: DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.namespace }}-secrets
+                  key: DB_PASSWORD
+            - name: APP_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.namespace }}-secrets
+                  key: APP_SECRET
+
+            # Variables RabbitMQ existantes
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.namespace }}-secrets
+                  key: RABBITMQ_USER
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.namespace }}-secrets
+                  key: RABBITMQ_PASSWORD
+
+          resources:
+            limits:
+              cpu: "{{ .Values.customers.resources.limits.cpu }}"
+              memory: "{{ .Values.customers.resources.limits.memory }}"
+            requests:
+              cpu: "{{ .Values.customers.resources.requests.cpu }}"
+              memory: "{{ .Values.customers.resources.requests.memory }}"

@@ -1,0 +1,56 @@
+{{- if eq .Values.namespace "dev" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: products-mongo-express
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    matchLabels:
+      app: products-mongo-express
+  template:
+    metadata:
+      labels:
+        app: products-mongo-express
+    spec:
+      containers:
+      - name: mongo-express
+        image: mongo-express:latest
+        ports:
+        - containerPort: 8081
+        env:
+        # Configuration de la base de données
+        - name: ME_CONFIG_MONGODB_URL
+          value: "mongodb://mongo-products-service:27017/"
+        - name: ME_CONFIG_MONGODB_ENABLE_ADMIN
+          value: "true"
+        # Configuration du chemin spécifique pour products
+        - name: ME_CONFIG_SITE_BASEURL
+          value: "/mongo-express/prod"
+        # Authentification
+        - name: ME_CONFIG_BASICAUTH_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.namespace }}-mongo-express-secrets
+              key: admin-user
+        - name: ME_CONFIG_BASICAUTH_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.namespace }}-mongo-express-secrets
+              key: admin-password
+        - name: VCAP_APP_HOST
+          value: "0.0.0.0"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: products-mongo-express-service
+  namespace: dev
+spec:
+  selector:
+    app: products-mongo-express
+  ports:
+  - port: 8081
+    targetPort: 8081
+  type: ClusterIP
+{{- end }}

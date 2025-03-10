@@ -1,0 +1,91 @@
+{{- if ne .Values.namespace "production" }}
+{{- $environments := list "dev" "staging"}}
+{{- range $env := $environments }}
+# Configuration Dev/Staging
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: rabbitmq-{{ $env }}
+  namespace: {{ $env }}
+spec:
+  serviceName: "rabbitmq"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rabbitmq-{{ $env }}
+  template:
+    metadata:
+      labels:
+        app: rabbitmq-{{ $env }}
+    spec:
+      containers:
+        - name: rabbitmq
+          image: bitnami/rabbitmq:latest
+          ports:
+          - name: amqp
+            containerPort: 5672
+          - name: management
+            containerPort: 15672
+          env:
+            - name: RABBITMQ_DEFAULT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $env }}-secrets
+                  key: RABBITMQ_USER
+            - name: RABBITMQ_DEFAULT_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $env }}-secrets
+                  key: RABBITMQ_PASSWORD
+            - name: RABBITMQ_ERLANG_COOKIE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $env }}-secrets
+                  key: RABBITMQ_ERLANG_COOKIE
+          resources:
+            limits:
+              cpu: 500m
+              memory: 2Gi
+            requests:
+              cpu: 250m
+              memory: 1Gi
+          volumeMounts:
+            - name: rabbitmq-data
+              mountPath: /bitnami/rabbitmq
+  volumeClaimTemplates:
+    - metadata:
+        name: rabbitmq-data
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        storageClassName: local-path
+        resources:
+          requests:
+            storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq-{{ $env }}
+  namespace: {{ $env }}
+spec:
+  {{- if eq $env "dev" }}
+  type: NodePort
+  ports:
+    - name: amqp
+      port: 5672
+      nodePort: 30682
+    - name: management
+      port: 15672
+      nodePort: 30681
+  {{- else }}
+  type: ClusterIP
+  ports:
+    - name: amqp
+      port: 5672
+    - name: management
+      port: 15672
+  {{- end }}
+  selector:
+    app: rabbitmq-{{ $env }}
+{{- end }}
+{{- end }}

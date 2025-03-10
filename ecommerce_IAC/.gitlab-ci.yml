@@ -1,0 +1,139 @@
+variables:
+  BASE_IMAGE: registry.gitlab.com/gitlab-org/cloud-deploy/aws-base:latest
+  TF_LOG: "ERROR"
+  TF_LOG_PATH: "terraform.log"
+  TF_IN_AUTOMATION: "true"
+  TF_STATE_BUCKET: "my-project-tfstate"
+  DYNAMODB_TABLE: "my-project-tfstate-lock"
+  TF_VAR_app_repository_secret: $(cat $ARGOCD_SSH_KEY_MANIFEST)
+  TF_VAR_argocd_admin_password: ${ARGOCD_ADMIN_PASSWORD}
+  TF_VAR_gitlab_ssh_key: ${ARGOCD_SSH_KEY_MANIFEST}
+
+.aws_common: &aws_common
+  image: ${BASE_IMAGE}
+  before_script:
+    - |
+      echo "🔍 Vérification connexion AWS..."
+      aws sts get-caller-identity
+      apt-get update && apt-get install -y gnupg software-properties-common curl jq
+      curl -fsSL https://apt.releases.hashicorp.com/gpg | gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+      echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/hashicorp.list
+      apt-get update && apt-get install -y terraform
+
+stages:
+  - infrastructure-vm
+  - setup-aws
+  - cleanup-aws
+  - cleanup-backend
+
+vm_setup:
+  stage: infrastructure-vm
+  tags: [shell]
+  when: manual
+  allow_failure: true
+  before_script:
+    - chmod +x scripts/*.sh
+  script:
+    - bash scripts/helm-install.sh
+    - bash scripts/metallb.sh
+    - bash scripts/nginx-ingress-vm.sh
+    - bash scripts/cert-manager.sh
+    - bash scripts/sealed-secret-install.sh
+
+1-setup_backend:
+  <<: *aws_common
+  stage: setup-aws
+  tags: [docker]
+  when: manual
+  script:
+    - |
+      cd terraform/backend
+      terraform init
+      terraform plan
+      terraform apply -auto-approve
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+    - when: never
+
+2-setup_aws:
+  <<: *aws_common
+  stage: setup-aws
+  tags: [prod]
+  when: manual
+  variables:
+    TERRAFORM_DIR: terraform
+  script:
+    - |
+      cd terraform
+      export TF_VAR_app_repository_secret=$(cat "$ARGOCD_SSH_KEY_MANIFEST")
+      # Initialisation de Terraform
+      terraform init \
+        -backend-config="bucket=${TF_STATE_BUCKET}" \
+        -backend-config="key=infrastructure/terraform.tfstate" \
+        -backend-config="region=eu-west-3" \
+        -backend-config="dynamodb_table=${DYNAMODB_TABLE}"
+
+      # Sélection ou création du workspace production
+      terraform workspace select production || terraform workspace new production
+
+      # Plan et Apply avec workspace production
+      terraform plan -var-file="terraform.tfvars"
+      terraform apply -auto-approve -var-file="terraform.tfvars"
+      # Export des outputs vers S3
+      echo "📤 Export des outputs vers S3..."
+      terraform output -json > terraform_outputs.json
+      aws s3 cp terraform_outputs.json s3://${TF_STATE_BUCKET}/env:production/infrastructure/outputs.json
+  rules:
+    - if: $CI_COMMIT_BRANCH == "feature"
+      when: manual
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+    - when: never
+
+
+destroy:
+  <<: *aws_common
+  stage: cleanup-aws
+  tags:
+    - prod
+  when: manual
+  allow_failure: false
+  variables:
+    TERRAFORM_DIR: terraform
+  rules:
+    - when: manual
+  script:
+    # Destruction des ressources Kubernetes
+    #- chmod +x scripts/destroy.sh
+    #- ./scripts/destroy.sh
+
+    # Destruction Terraform
+    - |
+      cd terraform
+      terraform init \
+        -backend-config="bucket=${TF_STATE_BUCKET}" \
+        -backend-config="key=infrastructure/terraform.tfstate" \
+        -backend-config="region=eu-west-3" \
+        -backend-config="dynamodb_table=${DYNAMODB_TABLE}"
+      terraform workspace select production
+      export TF_COMMAND_TIMEOUT=1800
+      terraform destroy -auto-approve -var-file="terraform.tfvars"
+
+destroy_backend:
+  <<: *aws_common
+  stage: cleanup-backend
+  tags:
+    - prod
+  allow_failure: true
+  needs:
+    - job: destroy
+      artifacts: false
+  rules:
+    - if: '$CI_JOB_STATUS_destroy == "success"'  # S'exécute automatiquement si destroy réussit
+    - when: never
+  script:
+    - |
+      echo "🧹 Suppression forcée du bucket et de la table..."
+      aws s3 rb "s3://${TF_STATE_BUCKET}" --force
+      aws dynamodb delete-table --table-name "${DYNAMODB_TABLE}" --region eu-west-3 || true

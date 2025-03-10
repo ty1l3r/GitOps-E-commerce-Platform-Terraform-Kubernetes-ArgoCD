@@ -1,0 +1,24 @@
+{{- if and .Values.customers.autoscaling.enabled (eq .Values.namespace "production") }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: customers
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: customers
+    environment: production
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: customers
+  minReplicas: {{ .Values.customers.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.customers.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.customers.autoscaling.targetCPUUtilizationPercentage }}
+{{- end }}

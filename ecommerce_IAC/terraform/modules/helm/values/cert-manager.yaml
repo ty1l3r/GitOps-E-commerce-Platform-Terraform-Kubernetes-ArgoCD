@@ -1,0 +1,22 @@
+# Configuration de base cert-manager
+installCRDs: true
+
+resources:
+  requests:
+    cpu: 5m      # Ultra léger
+    memory: 16Mi # Minimal
+  limits:
+    cpu: 10m     # Peu de certificats
+    memory: 32Mi # Buffer minimal
+
+# Configuration générale
+startupapicheck:
+  enabled: true
+webhook:
+  enabled: true
+cainjector:
+  enabled: true
+
+# Attendre que les CRDs soient prêts
+extraArgs:
+  - --enable-certificate-owner-ref=true

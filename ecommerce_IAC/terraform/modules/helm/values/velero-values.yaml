@@ -1,0 +1,121 @@
+# Configuration de l'image principale
+image:
+  repository: velero/velero
+  tag: v1.14.1
+  pullPolicy: IfNotPresent
+
+# Configuration du plugin AWS
+initContainers:
+  - name: velero-plugin-for-aws
+    image: velero/velero-plugin-for-aws:v1.7.0
+    imagePullPolicy: IfNotPresent
+    volumeMounts:
+      - mountPath: /target
+        name: plugins
+
+# Ressources pour le conteneur principal
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    cpu: 25m
+    memory: 64Mi
+
+# Configuration du stockage AWS
+configuration:
+  backupStorageLocation:
+    - name: default
+      provider: aws
+      default: true
+      bucket: ${bucket_name}
+      prefix: mongodb
+      config:
+        region: ${aws_region}
+
+  volumeSnapshotLocation:
+    - name: default
+      provider: aws
+      config:
+        region: ${aws_region}
+
+# Configuration des sauvegardes planifiées
+schedules:
+  mongodb-customers:
+    schedule: "*/5 * * * *"
+    template:
+      ttl: "24h"
+      backupLimit: 2    # Garde uniquement les 2 dernières sauvegardes
+      includedNamespaces:
+      - "production"
+      labelSelector:
+        matchLabels:
+          app: mongo-customers
+      storageLocation: default
+
+  mongodb-products:
+    schedule: "*/5 * * * *"
+    template:
+      ttl: "24h"
+      backupLimit: 2    # Garde uniquement les 2 dernières sauvegardes
+      includedNamespaces:
+      - "production"
+      labelSelector:
+        matchLabels:
+          app: mongo-products
+      storageLocation: default
+
+  mongodb-shopping:
+    schedule: "*/5 * * * *"
+    template:
+      ttl: "24h"
+      backupLimit: 2    # Garde uniquement les 2 dernières sauvegardes
+      includedNamespaces:
+      - "production"
+      labelSelector:
+        matchLabels:
+          app: mongo-shopping
+      storageLocation: default
+
+# Configuration du compte de service
+serviceAccount:
+  server:
+    create: true
+    name: "velero"
+    annotations:
+      eks.amazonaws.com/role-arn: ${velero_role_arn}
+
+# Configuration des métriques
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+
+# Configuration des credentials AWS
+credentials:
+  useSecret: true
+  existingSecret: "" # Laisser vide pour créer un nouveau secret
+  secretContents:
+    cloud: |
+      [default]
+      aws_role_arn = ${velero_role_arn}
+      web_identity_token_file = /var/run/secrets/eks.amazonaws.com/serviceaccount/token
+
+# Configuration du Node Agent
+deployNodeAgent: true
+nodeAgent:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+# Configuration RBAC
+rbac:
+  create: true
+
+# Mise à jour automatique des CRDs
+upgradeCRDs: true
+

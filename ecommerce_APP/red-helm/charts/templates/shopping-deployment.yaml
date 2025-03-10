@@ -1,0 +1,122 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shopping
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: shopping
+    {{- if eq .Values.namespace "production" }}
+    tier: backend
+    environment: production
+    {{- end }}
+spec:
+  replicas: {{ .Values.shopping.replicaCount }}
+  selector:
+    matchLabels:
+      app: shopping
+  template:
+    metadata:
+      labels:
+        app: shopping
+    spec:
+      {{- if eq .Values.namespace "production" }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - shopping
+                topologyKey: topology.kubernetes.io/zone
+      tolerations:
+        - key: "env"
+          operator: "Equal"
+          value: "production"
+          effect: "NoSchedule"
+      {{- end }}
+      imagePullSecrets:
+        - name: gitlab-registry-secret
+      containers:
+        - name: shopping
+          image: "{{ .Values.shopping.image.repository }}:{{ .Values.shopping.image.tag }}"
+          imagePullPolicy: {{ .Values.shopping.image.pullPolicy }}
+          {{- if eq .Values.namespace "production" }}
+          # Healthchecks production
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.shopping.livenessProbe.path }}
+              port: {{ .Values.shopping.livenessProbe.port }}
+            initialDelaySeconds: {{ .Values.shopping.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.shopping.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.shopping.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.shopping.livenessProbe.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.shopping.readinessProbe.path }}
+              port: {{ .Values.shopping.readinessProbe.port }}
+            initialDelaySeconds: {{ .Values.shopping.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.shopping.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.shopping.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.shopping.readinessProbe.failureThreshold }}
+          {{- end }}
+          ports:
+            - containerPort: {{ .Values.shopping.service.targetPort }}
+          env:
+            # Variables d'environnement générales
+            - name: NODE_ENV
+              value: "{{ .Values.shopping.env.NODE_ENV }}"
+            - name: MONGODB_URI
+              value: "{{ .Values.shopping.env.MONGODB_URI }}"
+            - name: EXCHANGE_NAME
+              value: "{{ .Values.shopping.env.EXCHANGE_NAME }}"
+            - name: PORT
+              value: "{{ .Values.shopping.env.PORT }}"
+            - name: BASE_URL
+              value: "{{ .Values.shopping.env.BASE_URL }}"
+            - name: CUSTOMER_SERVICE
+              value: "{{ .Values.shopping.env.CUSTOMER_SERVICE }}"
+            - name: SHOPPING_SERVICE
+              value: "{{ .Values.shopping.env.SHOPPING_SERVICE }}"
+            - name: RABBITMQ_SERVICE
+              value: "{{ .Values.shopping.env.RABBITMQ_SERVICE }}"
+
+            # Variables sensibles
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.namespace }}-secrets
+                  key: DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.namespace }}-secrets
+                  key: DB_PASSWORD
+            - name: APP_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.namespace }}-secrets
+                  key: APP_SECRET
+
+            # Variables RabbitMQ
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.namespace }}-secrets
+                  key: RABBITMQ_USER
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.namespace }}-secrets
+                  key: RABBITMQ_PASSWORD
+
+          resources:
+            limits:
+              cpu: "{{ .Values.shopping.resources.limits.cpu }}"
+              memory: "{{ .Values.shopping.resources.limits.memory }}"
+            requests:
+              cpu: "{{ .Values.shopping.resources.requests.cpu }}"
+              memory: "{{ .Values.shopping.resources.requests.memory }}"

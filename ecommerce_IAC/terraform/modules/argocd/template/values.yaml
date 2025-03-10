@@ -1,0 +1,56 @@
+server:
+  config:
+    server.cors.enabled: "true"
+    server.cors.allowOrigins: "*"
+  command:
+    - argocd-server
+  extraArgs:
+    - --insecure
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8080
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    annotations:
+      nginx.ingress.kubernetes.io/ssl-redirect: "false"
+      nginx.ingress.kubernetes.io/enable-cors: "true"
+    hosts:
+      - argocd.${domain_name}
+    paths:
+      - /
+    pathType: Prefix
+    tls: []
+
+configs:
+  repositories: {}
+  cm:
+    url: "http://argocd.${domain_name}"
+    server.insecure: "true"
+    admin.enabled: "true"
+    exec.enabled: "true"
+    server.disable.auth: "false"
+    application.syncPolicy: |
+      {
+        "automated": {
+          "prune": true,
+          "selfHeal": true
+        }
+      }
+
+repoServer:
+  serviceAccount:
+    create: true
+    name: argocd-repo-server
+
+redis:
+  enabled: true
+  serviceAccount:
+    create: true
+    name: argocd-redis
+
+controller:
+  serviceAccount:
+    create: true
+    name: argocd-application-controller

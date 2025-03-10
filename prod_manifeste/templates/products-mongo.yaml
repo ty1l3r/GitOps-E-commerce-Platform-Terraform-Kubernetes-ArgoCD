@@ -1,0 +1,139 @@
+{{- if eq .Values.namespace "production" }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongo-products
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: mongo-products
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongo-products
+  serviceName: "mongo-products-service"
+  template:
+    metadata:
+      labels:
+        app: mongo-products
+    spec:
+      containers:
+        - name: mongo
+          image: mongo:4.4
+          ports:
+            - containerPort: 27017
+          volumeMounts:
+            - name: mongo-products-storage
+              mountPath: /data/db
+          resources:
+            limits:
+              cpu: {{ .Values.mongoProd.resources.limits.cpu }}
+              memory: {{ .Values.mongoProd.resources.limits.memory }}
+            requests:
+              cpu: {{ .Values.mongoProd.resources.requests.cpu }}
+              memory: {{ .Values.mongoProd.resources.requests.memory }}
+      volumes:
+        - name: mongo-products-storage
+          persistentVolumeClaim:
+            claimName: mongo-products-pvc
+{{- else }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongo-products
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: mongo-products
+spec:
+  replicas: {{ .Values.mongoProd.replicaCount }}
+  selector:
+    matchLabels:
+      app: mongo-products
+  serviceName: "mongo-products-service"
+  template:
+    metadata:
+      labels:
+        app: mongo-products
+    spec:
+      containers:
+        - name: mongo
+          image: {{ .Values.mongoProd.image }}
+          ports:
+            - containerPort: {{ .Values.mongoProd.port }}
+          volumeMounts:
+            - name: mongo-products-storage
+              mountPath: /data/db
+          resources:
+            limits:
+              cpu: "{{ .Values.mongoProd.resources.limits.cpu }}"
+              memory: "{{ .Values.mongoProd.resources.limits.memory }}"
+            requests:
+              cpu: "{{ .Values.mongoProd.resources.requests.cpu }}"
+              memory: "{{ .Values.mongoProd.resources.requests.memory }}"
+  volumeClaimTemplates:
+    - metadata:
+        name: mongo-products-storage
+      spec:
+        accessModes: [ "{{ .Values.mongoProd.storage.accessMode }}" ]
+        resources:
+          requests:
+            storage: "{{ .Values.mongoProd.storage.size }}"
+{{- end }}
+
+
+
+
+
+
+# apiVersion: apps/v1
+# kind: StatefulSet
+# metadata:
+#   name: mongo-products
+#   namespace: {{ .Values.namespace }}
+#   labels:
+#     app: mongo-products
+#     storage: mongo-products
+#   annotations:
+#     argocd.argoproj.io/sync-wave: "0"
+#     backup.velero.io/backup-volumes: "mongo-products-storage"
+#     pre.hook.backup.velero.io/container: "mongo"
+#     pre.hook.backup.velero.io/command: '["/bin/sh", "-c", "mkdir -p /backup && mongodump --archive=/backup/dump.archive --uri=mongodb://localhost:27017 --gzip"]'
+#     post.hook.backup.velero.io/command: '["/bin/sh", "-c", "rm -rf /backup/dump.archive"]'
+#     velero.io/backup-location: "products"  # Spécifie l'emplacement de sauvegarde
+# spec:
+#   replicas: 1
+#   selector:
+#     matchLabels:
+#       app: mongo-products
+#   serviceName: "mongo-products-service"
+#   template:
+#     metadata:
+#       labels:
+#         app: mongo-products
+#         storage: mongo-products
+#     spec:
+#       containers:
+#         - name: mongo
+#           image: mongo:4.4
+#           ports:
+#             - containerPort: 27017
+#           volumeMounts:
+#             - name: mongo-products-storage
+#               mountPath: /data/db
+#             - name: backup-volume
+#               mountPath: /backup
+#           resources:
+#             limits:
+#               cpu: {{ .Values.mongoProd.resources.limits.cpu }}
+#               memory: {{ .Values.mongoProd.resources.limits.memory }}
+#             requests:
+#               cpu: {{ .Values.mongoProd.resources.requests.cpu }}
+#               memory: {{ .Values.mongoProd.resources.requests.memory }}
+#       volumes:
+#         - name: mongo-products-storage
+#           persistentVolumeClaim:
+#             claimName: mongo-products-pvc
+#         - name: backup-volume
+#           emptyDir: {}

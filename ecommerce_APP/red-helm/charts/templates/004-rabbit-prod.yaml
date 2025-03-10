@@ -1,0 +1,84 @@
+{{- if eq .Values.namespace "production" }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: rabbitmq
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: rabbitmq
+    storage: rabbitmq
+spec:
+  serviceName: "rabbitmq"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rabbitmq
+  template:
+    metadata:
+      labels:
+        app: rabbitmq
+        storage: rabbitmq
+    spec:
+      securityContext:
+        fsGroup: 1001
+        runAsUser: 1001
+      containers:
+      - name: rabbitmq
+        image: bitnami/rabbitmq:3.12.12
+        securityContext:
+          runAsUser: 1001
+          runAsNonRoot: true
+        ports:
+        - name: amqp
+          containerPort: 5672
+        - name: management
+          containerPort: 15672
+        env:
+        - name: RABBITMQ_DEFAULT_USER
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.namespace }}-secrets
+              key: RABBITMQ_USER
+        - name: RABBITMQ_DEFAULT_PASS
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.namespace }}-secrets
+              key: RABBITMQ_PASSWORD
+        - name: RABBITMQ_ERLANG_COOKIE
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.namespace }}-secrets
+              key: RABBITMQ_ERLANG_COOKIE
+        resources:
+          limits:
+            cpu: {{ .Values.rabbitmq.resources.limits.cpu | default "250m" | quote }}
+            memory: {{ .Values.rabbitmq.resources.limits.memory | default "384Mi" | quote }}
+          requests:
+            cpu: {{ .Values.rabbitmq.resources.requests.cpu | default "100m" | quote }}
+            memory: {{ .Values.rabbitmq.resources.requests.memory | default "192Mi" | quote }}
+        volumeMounts:
+        - name: rabbitmq-storage
+          mountPath: /bitnami/rabbitmq
+      volumes:
+      - name: rabbitmq-storage
+        persistentVolumeClaim:
+          claimName: rabbitmq-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: rabbitmq
+spec:
+  type: ClusterIP
+  ports:
+    - name: amqp
+      port: 5672
+    - name: management
+      port: 15672
+  selector:
+    app: rabbitmq
+{{- end }}

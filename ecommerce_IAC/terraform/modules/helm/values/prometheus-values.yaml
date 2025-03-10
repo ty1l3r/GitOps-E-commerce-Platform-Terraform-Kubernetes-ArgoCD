@@ -1,0 +1,130 @@
+# Configuration Prometheus simplifiée
+prometheus:
+  prometheusSpec:
+    retention: "2d"
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 200m
+        memory: 512Mi
+    storageSpec: null  
+    serviceMonitorSelector: {}
+    serviceMonitorNamespaceSelector: {}
+    podMonitorSelector: {}
+    podMonitorNamespaceSelector: {}
+
+# Configuration Grafana simplifiée
+grafana:
+  enabled: true
+  adminPassword: "admin"
+  initChownData:
+    enabled: true
+
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 3000
+
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hosts:
+      - grafana.${domain_name}
+    annotations:
+      nginx.ingress.kubernetes.io/ssl-redirect: "false"
+      nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    paths:
+      - /
+    pathType: Prefix
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+  # Une seule source de données simplifiée
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          url: http://prometheus-operated.monitoring.svc.cluster.local:9090
+          access: proxy
+          isDefault: true
+
+  # Désactiver toutes les fonctionnalités avancées
+  defaultDashboardsEnabled: false
+  dashboardProviders: {}
+  dashboards: {}
+
+  # Configuration serveur minimaliste
+  config:
+    paths:
+      data: /var/lib/grafana
+      logs: /var/log/grafana
+      plugins: /var/lib/grafana/plugins
+    server:
+      root_url: "http://grafana.${domain_name}"
+
+  # Désactiver complètement les sidecars
+  sidecar:
+    dashboards:
+      enabled: false
+    datasources:
+      enabled: false
+
+  # Configurer des sondes plus tolérantes
+  readinessProbe:
+    failureThreshold: 10
+    initialDelaySeconds: 60
+  livenessProbe:
+    failureThreshold: 10
+    initialDelaySeconds: 60
+
+# Node exporter pour les métriques de base du système
+nodeExporter:
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+# Kube state metrics pour les métriques Kubernetes
+kubeStateMetrics:
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+# Alertmanager minimaliste
+alertmanager:
+  enabled: true
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 50m
+      memory: 128Mi
+
+# Configuration des règles minimale
+defaultRules:
+  create: true
+  rules:
+    k8s: true
+    node: true
+    kubelet: true
+    kubernetesSystem: true

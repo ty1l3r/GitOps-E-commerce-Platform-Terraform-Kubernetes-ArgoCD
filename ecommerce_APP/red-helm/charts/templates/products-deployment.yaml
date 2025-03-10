@@ -1,0 +1,126 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: products
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: products
+    {{- if eq .Values.namespace "production" }}
+    tier: backend
+    environment: production
+    {{- end }}
+spec:
+  replicas: {{ .Values.products.replicaCount }}
+  selector:
+    matchLabels:
+      app: products
+  template:
+    metadata:
+      labels:
+        app: products
+    spec:
+      {{- if eq .Values.namespace "production" }}
+      # Configuration haute disponibilité pour production
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - products
+                topologyKey: topology.kubernetes.io/zone
+      # Tolérations pour les noeuds production
+      tolerations:
+        - key: "env"
+          operator: "Equal"
+          value: "production"
+          effect: "NoSchedule"
+      {{- end }}
+      imagePullSecrets:
+        - name: gitlab-registry-secret
+      terminationGracePeriodSeconds: 60  # Ajout ici
+      containers:
+        - name: products
+          image: "{{ .Values.products.image.repository }}:{{ .Values.products.image.tag }}"
+          imagePullPolicy: {{ .Values.products.image.pullPolicy }}
+          {{- if eq .Values.namespace "production" }}
+          # Healthchecks production
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.products.livenessProbe.path }}
+              port: {{ .Values.products.livenessProbe.port }}
+            initialDelaySeconds: {{ .Values.products.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.products.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.products.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.products.livenessProbe.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.products.readinessProbe.path }}
+              port: {{ .Values.products.readinessProbe.port }}
+            initialDelaySeconds: {{ .Values.products.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.products.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.products.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.products.readinessProbe.failureThreshold }}
+          {{- end }}
+          ports:
+            - containerPort: {{ .Values.products.service.targetPort }}
+          env:
+            # Variables d'environnement générales provenant de values.yaml
+            - name: NODE_ENV
+              value: "{{ .Values.products.env.NODE_ENV }}"
+            - name: MONGODB_URI
+              value: "{{ .Values.products.env.MONGODB_URI }}"
+            - name: EXCHANGE_NAME
+              value: "{{ .Values.products.env.EXCHANGE_NAME }}"
+            - name: PORT
+              value: "{{ .Values.products.env.PORT }}"
+            - name: BASE_URL
+              value: "{{ .Values.products.env.BASE_URL }}"
+            - name: CUSTOMER_SERVICE
+              value: "{{ .Values.products.env.CUSTOMER_SERVICE }}"
+            - name: SHOPPING_SERVICE
+              value: "{{ .Values.products.env.SHOPPING_SERVICE }}"
+            - name: RABBITMQ_SERVICE
+              value: "{{ .Values.products.env.RABBITMQ_SERVICE }}"
+
+            # Variables sensibles injectées depuis le secret dev-secrets
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.namespace }}-secrets
+                  key: DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.namespace }}-secrets
+                  key: DB_PASSWORD
+            - name: APP_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.namespace }}-secrets
+                  key: APP_SECRET
+
+            # Variables pour RabbitMQ récupérées depuis le secret my-secret-rbmq
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.namespace }}-secrets
+                  key: RABBITMQ_USER  # Utilise la clé 'username' du secret
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.namespace }}-secrets
+                  key: RABBITMQ_PASSWORD  # Utilise la clé 'password' du secret
+
+          resources:
+            limits:
+              cpu: "{{ .Values.products.resources.limits.cpu }}"
+              memory: "{{ .Values.products.resources.limits.memory }}"
+            requests:
+              cpu: "{{ .Values.products.resources.requests.cpu }}"
+              memory: "{{ .Values.products.resources.requests.memory }}"
+

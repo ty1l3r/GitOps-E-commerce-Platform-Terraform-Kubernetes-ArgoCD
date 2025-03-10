@@ -1,0 +1,5 @@
+configs:
+  repositories:
+    prod-manifest:
+      url: ${gitlab_repo_url}
+      sshPrivateKey: ${app_repository_secret}

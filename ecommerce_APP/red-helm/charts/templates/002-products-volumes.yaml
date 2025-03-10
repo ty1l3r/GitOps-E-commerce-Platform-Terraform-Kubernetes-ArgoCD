@@ -1,0 +1,73 @@
+{{- if eq .Values.namespace "production" }}
+---
+# StorageClass pour MongoDB Products
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: mongo-products-storage-class
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+    storageclass.kubernetes.io/is-default-class: "false"
+provisioner: ebs.csi.aws.com
+volumeBindingMode: WaitForFirstConsumer
+parameters:
+  type: gp3
+  encrypted: "false"
+allowVolumeExpansion: true
+
+---
+# Volume Primary MongoDB Products
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mongo-products-pv
+  labels:
+    app: mongo-products
+    type: primary
+    storage: mongo-products
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  capacity:
+    storage: 3Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: mongo-products-storage-class
+  csi:
+    driver: ebs.csi.aws.com
+    volumeHandle: {{ .Values.mongoProd.storage.volumes.primary.volumeId }}
+    fsType: ext4
+    volumeAttributes:
+      type: gp3
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: topology.kubernetes.io/zone
+          operator: In
+          values:
+          - {{ .Values.mongoProd.storage.volumes.primary.az }}
+
+---
+# PVC Primary MongoDB Products
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongo-products-pvc
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: mongo-products
+    type: primary
+    storage: mongo-products
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: mongo-products-storage-class
+  volumeName: mongo-products-pv
+  resources:
+    requests:
+      storage: 3Gi
+{{- end }}

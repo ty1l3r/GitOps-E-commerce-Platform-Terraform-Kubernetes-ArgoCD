@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo-shopping-service
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: mongo-shopping
+    {{- if eq .Values.namespace "production" }}
+    tier: database
+    environment: production
+    {{- end }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 27017
+      targetPort: 27017
+      protocol: TCP
+      name: mongodb
+  selector:
+    app: mongo-shopping
+  {{- if eq .Values.namespace "production" }}
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: {{ .Values.mongoShop.sessionTimeout | default 10800 }}
+  publishNotReadyAddresses: true
+  {{- end }}

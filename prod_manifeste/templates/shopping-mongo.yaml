@@ -1,0 +1,83 @@
+{{- if eq .Values.namespace "production" }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+ name: mongo-shopping
+ namespace: {{ .Values.namespace }}
+ labels:
+   app: mongo-shopping
+ annotations:
+   argocd.argoproj.io/sync-wave: "0"
+spec:
+ replicas: 1
+ selector:
+   matchLabels:
+     app: mongo-shopping
+ serviceName: "mongo-shopping-service"
+ template:
+   metadata:
+     labels:
+       app: mongo-shopping
+   spec:
+     containers:
+       - name: mongo
+         image: mongo:4.4
+         ports:
+           - containerPort: 27017
+         volumeMounts:
+           - name: mongo-shopping-storage
+             mountPath: /data/db
+         resources:
+           limits:
+             cpu: {{ .Values.mongoShop.resources.limits.cpu }}
+             memory: {{ .Values.mongoShop.resources.limits.memory }}
+           requests:
+             cpu: {{ .Values.mongoShop.resources.requests.cpu }}
+             memory: {{ .Values.mongoShop.resources.requests.memory }}
+     volumes:
+       - name: mongo-shopping-storage
+         persistentVolumeClaim:
+           claimName: mongo-shopping-pvc
+{{- else }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongo-shopping
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: mongo-shopping
+spec:
+  replicas: {{ .Values.mongoShop.replicaCount }}
+  selector:
+    matchLabels:
+      app: mongo-shopping
+  serviceName: "mongo-shopping-service"
+  template:
+    metadata:
+      labels:
+        app: mongo-shopping
+    spec:
+      containers:
+        - name: mongo
+          image: {{ .Values.mongoShop.image }}
+          ports:
+            - containerPort: {{ .Values.mongoShop.port }}
+          volumeMounts:
+            - name: mongo-shopping-storage
+              mountPath: /data/db
+          resources:
+            limits:
+              cpu: "{{ .Values.mongoShop.resources.limits.cpu }}"
+              memory: "{{ .Values.mongoShop.resources.limits.memory }}"
+            requests:
+              cpu: "{{ .Values.mongoShop.resources.requests.cpu }}"
+              memory: "{{ .Values.mongoShop.resources.requests.memory }}"
+  volumeClaimTemplates:
+    - metadata:
+        name: mongo-shopping-storage
+      spec:
+        accessModes: [ "{{ .Values.mongoShop.storage.accessMode }}" ]
+        resources:
+          requests:
+            storage: "{{ .Values.mongoShop.storage.size }}"
+{{- end }}

@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: exemple-app
+  namespace: argocd
+spec:
+  destination:
+    namespace: production
+    server: 'https://kubernetes.default.svc'
+  source:
+    path: charts
+    repoURL: 'git@gitlab.com:repo/prod-manifest.git'
+    targetRevision: HEAD
+    helm:
+      valueFiles:
+        - values-prod.yaml
+      releaseName: exemple-app
+  project: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+      - RespectIgnoreDifferences=true

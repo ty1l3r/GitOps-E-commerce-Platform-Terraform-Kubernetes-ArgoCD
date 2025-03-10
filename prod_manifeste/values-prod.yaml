@@ -1,0 +1,359 @@
+###########################################################################################
+# Namespace
+###########################################################################################
+namespace: "production"
+
+
+###########################################################################################
+# RABBITMQ
+###########################################################################################
+rabbitmq:
+  resources:
+    limits:
+      cpu: "100m"
+      memory: "256Mi"
+    requests:
+      cpu: "25m"
+      memory: "128Mi"
+  storage:
+    volumes:
+      primary:
+        volumeId: ${EBS_VOLUMES_RABBITMQ_PRIMARY_ID}
+        az: "eu-west-3a"
+
+###########################################################################################
+# APP (DONE)
+###########################################################################################
+app:
+  replicaCount: 1
+  image:
+    repository: "${APP_IMAGE_REPO:-registry.example.com/project/app}"
+    tag: "${APP_IMAGE_TAG:-latest}"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 80
+  resources:
+    limits:
+      cpu: "200m"
+      memory: "256Mi"
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+  autoscaling:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 1
+    targetCPUUtilizationPercentage: 80
+
+###########################################################################################
+# CUSTOMER (DONE)
+###########################################################################################
+customers:
+  replicaCount: 1
+  image:
+    repository: "registry.example.com/organization/project/customers"
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8001
+    targetPort: 8001
+  resources:
+    limits:
+      cpu: "300m"
+      memory: "384Mi"
+    requests:
+      cpu: "150m"
+      memory: "256Mi"
+  env:
+    NODE_ENV: "production"
+    MONGODB_URI: "mongodb://mongo-customers-service:27017/customers_db"
+    EXCHANGE_NAME: "ONLINE_STORE_PROD"
+    PORT: 8001
+    BASE_URL: "http://customers-service.production.svc.cluster.local:8001/"
+    CUSTOMER_SERVICE: "http://customers-service.production.svc.cluster.local:8001"
+    SHOPPING_SERVICE: "http://shopping-service.production.svc.cluster.local:8003"
+    RABBITMQ_SERVICE: "rabbitmq.production.svc.cluster.local:5672"
+  # Configuration de l'autoscaling maintenue
+  autoscaling:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 1
+    targetCPUUtilizationPercentage: 80
+  livenessProbe:
+    enabled: true
+    path: /health
+    port: 8001
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readinessProbe:
+    enabled: true
+    path: /health
+    port: 8001
+    initialDelaySeconds: 20
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+# Customer MongoDB
+mongoCusto:
+  # Configuration de base
+  replicaCount: 1
+  name: "mongo-customers"
+  image: "mongo:4.4"
+  port: 27017
+  # Configuration des ressources
+  resources:
+    limits:
+      cpu: "150m"
+      memory: "384Mi"
+    requests:
+      cpu: "50m"
+      memory: "192Mi"
+   # Configuration du stockage statique pour utiliser les volumes EBS existants
+  storage:
+    volumes:
+      primary:
+        volumeId: ${MONGODB_CUSTOMERS_PRIMARY_ID}
+        az: "eu-west-3a"
+      replica:
+        volumeId: ""
+  # Configuration de la réplication
+  replication:
+    enabled: false
+    replSetName: "rs0"
+    replicas: 1
+  # Configuration du monitoring
+  monitoring:
+    enabled: true
+    metrics:
+      - mongodb_connections
+      - mongodb_op_counters
+      - mongodb_memory
+      - mongodb_storage
+      - mongodb_replication
+    serviceMonitor:
+      enabled: true
+      namespace: production
+
+###########################################################################################
+# PRODUCTS (DONE)
+###########################################################################################
+products:
+  replicaCount: 1
+  image:
+    repository: "registry.example.com/organization/project/products"
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8002
+    targetPort: 8002
+  resources:
+    limits:
+      cpu: "400m"
+      memory: "512Mi"
+    requests:
+      cpu: "200m"
+      memory: "384Mi"
+  env:
+    NODE_ENV: "production"
+    MONGODB_URI: "mongodb://mongo-products-service:27017/products_db"
+    EXCHANGE_NAME: "ONLINE_STORE_PROD"
+    PORT: 8002
+    BASE_URL: "http://products-service.production.svc.cluster.local:8002/"
+    CUSTOMER_SERVICE: "http://customers-service.production.svc.cluster.local:8001"
+    SHOPPING_SERVICE: "http://shopping-service.production.svc.cluster.local:8003"
+    RABBITMQ_SERVICE: "rabbitmq.production.svc.cluster.local:5672"
+
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 1
+    targetCPUUtilizationPercentage: 90
+  livenessProbe:
+    enabled: true
+    path: /health
+    port: 8002
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readinessProbe:
+    enabled: true
+    path: /health
+    port: 8002
+    initialDelaySeconds: 20
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+# MongoDB Products Configuration
+mongoProd:
+  name: "mongo-products"
+  image: "mongo:4.4"
+  replicaCount: 1
+  port: 27017
+  # Configuration des ressources
+  resources:
+    limits:
+      cpu: "150m"
+      memory: "384Mi"
+    requests:
+      cpu: "50m"
+      memory: "192Mi"
+  # Configuration du stockage
+  storage:
+    volumes:
+      primary:
+        volumeId: ${MONGODB_PRODUCTS_PRIMARY_ID}
+        az: "eu-west-3a"
+      replica:
+        volumeId: ""
+        az: "eu-west-3a"
+  # Configuration de la réplication
+  replication:
+    enabled: false
+    replSetName: "rs0"
+    replicas: 1
+  # Configuration du monitoring
+  monitoring:
+    enabled: true
+    metrics:
+      - mongodb_connections
+      - mongodb_memory
+      - mongodb_storage
+    serviceMonitor:
+      enabled: true
+      namespace: production
+
+###########################################################################################
+# SHOPPING (DONE)
+###########################################################################################
+shopping:
+  replicaCount: 1
+  image:
+    repository: "registry.example.com/organization/project/shopping"
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 8003
+    targetPort: 8003
+
+  livenessProbe:
+    enabled: true
+    path: /health
+    port: 8003
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readinessProbe:
+    enabled: true
+    path: /health
+    port: 8003
+    initialDelaySeconds: 20
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  resources:
+    limits:
+      cpu: "300m"
+      memory: "384Mi"
+    requests:
+      cpu: "150m"
+      memory: "256Mi"
+
+  env:
+    NODE_ENV: "production"
+    MONGODB_URI: "mongodb://mongo-shopping-service:27017/shopping_db"
+    EXCHANGE_NAME: "ONLINE_STORE_PROD"
+    PORT: 8003
+    BASE_URL: "http://shopping-service.production.svc.cluster.local:8003/"
+    CUSTOMER_SERVICE: "http://customers-service.production.svc.cluster.local:8001"
+    SHOPPING_SERVICE: "http://shopping-service.production.svc.cluster.local:8003"
+    RABBITMQ_SERVICE: "rabbitmq.production.svc.cluster.local:5672"
+
+  autoscaling:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 1
+    targetCPUUtilizationPercentage: 80
+
+mongoShop:
+  # Configuration de base
+  replicaCount: 1
+  name: "mongo-shopping"
+  image: "mongo:4.4"
+  port: 27017
+  # Configuration des ressources
+  resources:
+    limits:
+      cpu: "150m"
+      memory: "384Mi"
+    requests:
+      cpu: "50m"
+      memory: "192Mi"
+  # Configuration du stockage
+  storage:
+    volumes:
+      primary:
+        volumeId: ${MONGODB_SHOPPING_PRIMARY_ID}
+        az: "eu-west-3a"
+      replica:
+        volumeId: ""
+        az: "eu-west-3a"
+  # Configuration de la réplication
+  replication:
+    enabled: false
+    replSetName: "rs0"
+    replicas: 1
+  # Configuration du monitoring avec Graphana
+  monitoring:
+    enabled: true
+    metrics:
+      - mongodb_connections
+      - mongodb_memory
+      - mongodb_storage
+    serviceMonitor:
+      enabled: true
+      namespace: production
+
+
+###########################################################################################
+# Cert Manager (DONE)
+###########################################################################################
+certManager:
+  enabled: true
+  email: "${CERT_MANAGER_EMAIL:-admin@example.com}"
+  namespace: cert-manager
+
+certificate:
+  name: "${CERT_NAME:-example-prod-cert}"
+  secretName: "${CERT_SECRET_NAME:-example-prod-tls}"
+  issuerRef:
+    name: "${CERT_ISSUER_NAME:-letsencrypt-example}"
+    kind: "ClusterIssuer"
+
+###########################################################################################
+# INGRESS (DONE)
+###########################################################################################
+ingress:
+  host: "${INGRESS_HOST:-example.domain.com}"
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: "${CERT_ISSUER_NAME:-letsencrypt-example}"
+  paths:
+    - path: /
+      pathType: Prefix
+  tls:
+    - secretName: "${CERT_SECRET_NAME:-example-prod-tls}"
+      hosts:
+        - "${INGRESS_HOST:-example.domain.com}"

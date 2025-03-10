@@ -1,0 +1,44 @@
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate.d/
+
+# Système
+.DS_Store
+.env
+*.log
+
+# Credentials
+*-local
+local-*
+.kube/
+.aws/
+
+# IDE
+.vscode/
+.idea/
+
+# Build
+*.o
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Temp
+*.swp
+*.swo
+*~
+*.tmp
+
+/exemple/
+/projet-devops-datascientest-runner-master/
+
+# SSH Keys
+-key/
+*_key
+*_key.pub
+*.base64

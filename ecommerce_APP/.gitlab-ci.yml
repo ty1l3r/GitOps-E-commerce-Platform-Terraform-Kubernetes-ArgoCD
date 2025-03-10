@@ -1,0 +1,499 @@
+#-----------------------------------------------------------------
+# HOOKS
+#-----------------------------------------------------------------
+
+.security_check: &security_template
+  stage: security
+  image: python:3.9-slim
+  tags:
+  - prod
+  before_script:
+    - apt-get update
+    - apt-get install -y curl build-essential
+    - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+    - source $HOME/.cargo/env
+  script:
+    - pip install --upgrade pip
+    - pip install checkov
+    - |
+      checkov \
+        -f ${DOCKERFILE_PATH} \
+        --framework dockerfile \
+        --check CKV_DOCKER_2,CKV_DOCKER_3,CKV_DOCKER_4 \
+        --output json \
+        --output-file-path ${IMAGE_NAME}-security.json \
+        --soft-fail
+  artifacts:
+    paths:
+      - ${IMAGE_NAME}-security.json
+    expire_in: 1 week
+  allow_failure: true
+
+.build_and_push_image: &build_template
+  stage: build
+  tags:
+    - shell
+  before_script:
+    - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
+  script:
+    - |
+      echo "🏗️ Building ${IMAGE_NAME}:latest"
+      docker build -t ${CI_REGISTRY_IMAGE}/${IMAGE_NAME}:latest \
+        -f ${DOCKERFILE_PATH} ${BUILD_CONTEXT}
+      docker push ${CI_REGISTRY_IMAGE}/${IMAGE_NAME}:latest
+  after_script:
+    - docker logout $CI_REGISTRY
+
+.lint_node_template: &lint_node_template
+ stage: lint
+ image: node:16-alpine
+ before_script:
+   - cd ${SERVICE_PATH}
+   - |
+     echo '{
+       "scripts": {"lint": "eslint src"},
+       "devDependencies": {
+         "eslint": "^8.45.0",
+         "@babel/core": "^7.22.5",
+         "@babel/eslint-parser": "^7.22.5"
+       },
+       "eslintConfig": {
+         "parser": "@babel/eslint-parser",
+         "parserOptions": {
+           "requireConfigFile": false,
+           "ecmaVersion": "latest",
+           "sourceType": "module"
+         }
+       }
+     }' > package.json
+   - npm install
+ script:
+   - npm run lint
+ allow_failure: true
+
+.trivy_template: &trivy_template
+ stage: trivy
+ image:
+   name: aquasec/trivy:latest
+   entrypoint: [""]
+ script:
+   - trivy fs --severity HIGH,CRITICAL ${DOCKERFILE_PATH}
+ allow_failure: true
+
+stages:
+ - lint
+ - security
+ - build
+ - trivy
+ - prepare
+ - deploy
+
+
+#-------------------------------------------------------------------
+# STAGES
+#-------------------------------------------------------------------
+stages:
+  - security
+  - build
+  - prepare-vm
+  - prepare-aws
+  - deploy
+
+#-------------------------------------------------------------------
+# LINTING
+#-------------------------------------------------------------------
+lint_app:
+  stage: lint
+  image: node:16
+  variables:
+    SERVICE_PATH: "./builds/app"
+  script:
+    - cd ${SERVICE_PATH}
+    - npm install
+    - npm install --save-dev eslint-config-react-app @babel/eslint-parser babel-preset-react-app
+    - npm run lint
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "lint"'
+      when: always
+  allow_failure: true
+
+lint_customers:
+ stage: lint
+ image: node:18-alpine
+ variables:
+   SERVICE_PATH: "./builds/customers"
+ script:
+   - ls -la ${SERVICE_PATH}
+   - cat ${SERVICE_PATH}/package.json
+ allow_failure: true
+ rules:
+   - if: '$CI_COMMIT_BRANCH == "lint"'
+     when: always
+
+lint_products:
+ stage: lint
+ image: node:16-alpine
+ variables:
+   SERVICE_PATH: "./builds/products"
+ script:
+   - ls -la ${SERVICE_PATH}
+   - cat ${SERVICE_PATH}/package.json
+ allow_failure: true
+ rules:
+   - if: '$CI_COMMIT_BRANCH == "lint"'
+     when: always
+
+lint_shopping:
+ stage: lint
+ image: node:16-alpine
+ variables:
+   SERVICE_PATH: "./builds/shopping"
+ script:
+   - ls -la ${SERVICE_PATH}
+   - cat ${SERVICE_PATH}/package.json
+ allow_failure: true
+ rules:
+   - if: '$CI_COMMIT_BRANCH == "lint"'
+     when: always
+
+#-------------------------------------------------------------------
+# CHEKOV
+#-------------------------------------------------------------------
+check_app:
+  <<: *security_template
+  variables:
+    IMAGE_NAME: "app"
+    DOCKERFILE_PATH: "./builds/app/Dockerfile"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BEFORE == "0000000000000000000000000000000000000000"
+      when: always
+    - changes:
+        - builds/app/**/*
+      when: always
+
+check_customers:
+  <<: *security_template
+  variables:
+    IMAGE_NAME: "customers"
+    DOCKERFILE_PATH: "./builds/customers/Dockerfile"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BEFORE == "0000000000000000000000000000000000000000"
+      when: always
+    - changes:
+        - builds/customers/**/*
+      when: always
+
+check_products:
+  <<: *security_template
+  variables:
+    IMAGE_NAME: "products"
+    DOCKERFILE_PATH: "./builds/products/Dockerfile"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BEFORE == "0000000000000000000000000000000000000000"
+      when: always
+    - changes:
+        - builds/products/**/*
+      when: always
+
+check_shopping:
+  <<: *security_template
+  variables:
+    IMAGE_NAME: "shopping"
+    DOCKERFILE_PATH: "./builds/shopping/Dockerfile"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BEFORE == "0000000000000000000000000000000000000000"
+      when: always
+    - changes:
+        - builds/shopping/**/*
+      when: always
+#-------------------------------------------------------------------
+# TRIVY
+#-------------------------------------------------------------------
+trivy_app:
+  <<: *trivy_template
+  variables:
+    DOCKERFILE_PATH: "./builds/app"
+
+trivy_customers:
+  <<: *trivy_template
+  variables:
+    DOCKERFILE_PATH: "./builds/customers"
+
+trivy_products:
+  <<: *trivy_template
+  variables:
+    DOCKERFILE_PATH: "./builds/products"
+
+trivy_shopping:
+  <<: *trivy_template
+  variables:
+    DOCKERFILE_PATH: "./builds/shopping"
+
+#-------------------------------------------------------------------
+# BUILD
+#-------------------------------------------------------------------
+build_app:
+  <<: *build_template
+  needs: [check_app]
+  variables:
+    IMAGE_NAME: "app"
+    DOCKERFILE_PATH: "./builds/app/Dockerfile"
+    BUILD_CONTEXT: "./builds/app"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BEFORE == "0000000000000000000000000000000000000000"
+      when: always
+    - changes:
+        - builds/app/**/*
+      when: always
+
+build_customers:
+  <<: *build_template
+  needs: [check_customers]
+  variables:
+    IMAGE_NAME: "customers"
+    DOCKERFILE_PATH: "./builds/customers/Dockerfile"
+    BUILD_CONTEXT: "./builds/customers"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BEFORE == "0000000000000000000000000000000000000000"
+      when: always
+    - changes:
+        - builds/customers/**/*
+      when: always
+
+build_products:
+  <<: *build_template
+  needs: [check_products]
+  variables:
+    IMAGE_NAME: "products"
+    DOCKERFILE_PATH: "./builds/products/Dockerfile"
+    BUILD_CONTEXT: "./builds/products"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BEFORE == "0000000000000000000000000000000000000000"
+      when: always
+    - changes:
+        - builds/products/**/*
+      when: always
+
+build_shopping:
+  <<: *build_template
+  needs: [check_shopping]
+  variables:
+    IMAGE_NAME: "shopping"
+    DOCKERFILE_PATH: "./builds/shopping/Dockerfile"
+    BUILD_CONTEXT: "./builds/shopping"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BEFORE == "0000000000000000000000000000000000000000"
+      when: always
+    - changes:
+        - builds/shopping/**/*
+      when: always
+
+#-------------------------------------------------------------------
+# PREPARE ENVIRONMENTS VM & AWS
+#-------------------------------------------------------------------
+
+prepare_environment_vm:
+  stage: prepare-vm
+  image: alpine/helm:3.11.1
+  tags:
+    - shell
+  variables:
+    CERT_MANAGER_EMAIL: "example@example.com"
+  before_script:
+    - export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+    - echo "KUBECONFIG is set to:$KUBECONFIG"
+  script:
+    - helm upgrade cert-manager jetstack/cert-manager --namespace cert-manager --values ./example-helm/charts/values-cert-manager.yaml --reuse-values
+    - kubectl wait --for=condition=Available deployment/cert-manager -n cert-manager --timeout=120s
+    - chmod +x scripts/*
+    - ./scripts/sealed-secret.sh
+    - ./scripts/sealed-secret-backup.sh
+    - ./scripts/cluster-issuer.sh
+  artifacts:
+    paths:
+      - backups/
+    expire_in: 1 week
+  rules:
+    - when: manual
+      allow_failure: true
+
+prepare_environment_aws:
+  stage: prepare-aws
+  image: ${CI_REGISTRY_IMAGE}/app-deploy-prod:latest
+  tags: [prod]
+  variables:
+    CERT_MANAGER_EMAIL: example@example.com
+    AWS_DEFAULT_REGION: example-region
+    CLUSTER_NAME: example-eks-cluster
+    NAMESPACE: production
+    KUBECONFIG: ~/.kube/config
+    GITLAB_REGISTRY_USER: "gitlab-ci-token"
+    GITLAB_REGISTRY_TOKEN: $CI_PUSH_TOKEN
+  before_script:
+    - |
+      # Installation de kubectl
+      curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+      chmod +x kubectl
+      mv kubectl /usr/local/bin/
+      export KUBECONFIG=~/.kube/config
+      mkdir -p ~/.kube
+      touch $KUBECONFIG
+      chmod 600 $KUBECONFIG
+      aws eks update-kubeconfig --name ${CLUSTER_NAME} --region ${AWS_DEFAULT_REGION}
+      kubectl cluster-info
+  script:
+    - |
+      if ! kubectl get namespace production >/dev/null 2>&1; then
+        echo "📦 Création du namespace production..."
+        kubectl create namespace production
+      fi
+    # Installation et configuration
+    - chmod +x scripts/*
+    - ./scripts/sealed-secret-install-prod.sh
+    - sleep 50
+    - ./scripts/sealed-secret-prod.sh
+    - ./scripts/sealed-secret-backup-prod.sh
+    - ./scripts/cluster-issuer.sh
+  rules:
+    - when: manual
+      allow_failure: true
+
+#-------------------------------------------------------------------
+# DEPLOYS DEV / STAGING / PROD
+#-------------------------------------------------------------------
+
+deploy-dev:
+  stage: deploy
+  image: alpine/helm:3.11.1
+  tags:
+    - shell
+  environment:
+    name: dev
+    kubernetes:
+      namespace: dev
+  variables:
+    HELM_DEBUG: "true"
+  before_script:
+    - export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+  script:
+    - >-
+      helm upgrade app-name ./example-helm/charts
+      --install
+      --namespace dev
+      --create-namespace
+      --values ./example-helm/charts/values-dev.yaml
+      --set app.image.repository=${CI_REGISTRY_IMAGE}/app
+      --set customers.image.repository=${CI_REGISTRY_IMAGE}/customers
+      --set products.image.repository=${CI_REGISTRY_IMAGE}/products
+      --set shopping.image.repository=${CI_REGISTRY_IMAGE}/shopping
+      --atomic
+      --timeout 10m
+    - kubectl get pods -n dev
+  after_script:
+    - chmod +x scripts/init-data.sh
+    - ./scripts/init-data.sh
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+      when: manual
+
+deploy-staging:
+  stage: deploy
+  image: alpine/helm:3.11.1
+  tags:
+    - shell
+  environment:
+    name: staging
+    kubernetes:
+      namespace: staging
+  variables:
+    HELM_DEBUG: "true"
+  before_script:
+    - export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+  script:
+    - >-
+      helm upgrade app-name ./example-helm/charts
+      --install
+      --namespace staging
+      --create-namespace
+      --values ./example-helm/charts/values-staging.yaml
+      --set app.image.repository=${CI_REGISTRY_IMAGE}/app
+      --set customers.image.repository=${CI_REGISTRY_IMAGE}/customers
+      --set products.image.repository=${CI_REGISTRY_IMAGE}/products
+      --set shopping.image.repository=${CI_REGISTRY_IMAGE}/shopping
+      --atomic
+      --timeout 10m
+    - kubectl get pods -n staging
+  after_script:
+    - chmod +x scripts/init-data-staging.sh
+    - ./scripts/init-data-staging.sh
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "staging"'
+      when: manual
+
+
+deploy-prod:
+  stage: deploy
+  tags:
+    - prod
+  image: registry.example.com/organization/project/app-deploy-prod
+  variables:
+    GIT_STRATEGY: clone
+    GIT_DEPTH: 0
+    HELM_DEBUG: "true"
+    PROD_NAMESPACE: "production"
+    TF_STATE_BUCKET: "example-tfstate-bucket"
+    CI_REGISTRY_IMAGE: "registry.example.com/organization/project"
+  before_script:
+    - |
+      # Installation des outils nécessaires
+      apt-get update && apt-get install -y wget
+      wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+      chmod +x /usr/local/bin/yq
+      git config --global user.email "example@example.com"
+      git config --global user.name "CI User"
+
+      # Récupération et debug des volumes EBS
+      aws s3 cp s3://${TF_STATE_BUCKET}/env:production/infrastructure/outputs.json /tmp/
+
+      # Volumes EBS
+      export MONGODB_CUSTOMERS_PRIMARY_ID=$(cat /tmp/outputs.json | jq -r '.ebs_volumes.value.mongodb_customers.primary.id')
+      export MONGODB_PRODUCTS_PRIMARY_ID=$(cat /tmp/outputs.json | jq -r '.ebs_volumes.value.mongodb_products.primary.id')
+      export MONGODB_SHOPPING_PRIMARY_ID=$(cat /tmp/outputs.json | jq -r '.ebs_volumes.value.mongodb_shopping.primary.id')
+      export RABBITMQ_PRIMARY_ID=$(cat /tmp/outputs.json | jq -r '.ebs_volumes.value.rabbitmq.primary.id')
+      # Bucket de backup
+      export BACKUP_BUCKET=$(cat /tmp/outputs.json | jq -r '.backup_bucket.value')
+  script:
+    # Clone et navigation
+    - |
+      echo "Clonage du repo manifest..."
+      MANIFEST_REPO="https://oauth2:${CI_PUSH_TOKEN}@gitlab.com/organization/project-manifest.git"
+      git clone ${MANIFEST_REPO} /tmp/example-manifest
+      cd /tmp/example-manifest
+    - |
+      echo "Copie du dossier charts..."
+      cp -r $CI_PROJECT_DIR/example-helm/charts/* .
+    - |
+      echo "Mise à jour des valeurs EBS..."
+      # Ajout d'un timestamp pour forcer le changement
+      TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+      echo "# Last updated: ${TIMESTAMP}" >> values-prod.yaml
+
+      # Mise à jour des values avec yq
+      yq eval ".mongoCusto.storage.volumes.primary.volumeId = \"${MONGODB_CUSTOMERS_PRIMARY_ID}\"" -i values-prod.yaml
+      yq eval ".mongoProd.storage.volumes.primary.volumeId = \"${MONGODB_PRODUCTS_PRIMARY_ID}\"" -i values-prod.yaml
+      yq eval ".mongoShop.storage.volumes.primary.volumeId = \"${MONGODB_SHOPPING_PRIMARY_ID}\"" -i values-prod.yaml
+      yq eval ".rabbitmq.storage.volumes.primary.volumeId = \"${RABBITMQ_PRIMARY_ID}\"" -i values-prod.yaml
+      yq eval ".mongoCusto.backup.destination.s3.bucket = \"${BACKUP_BUCKET}\"" -i values-prod.yaml
+      yq eval ".mongoProd.backup.destination.s3.bucket = \"${BACKUP_BUCKET}\"" -i values-prod.yaml
+      yq eval ".mongoShop.backup.destination.s3.bucket = \"${BACKUP_BUCKET}\"" -i values-prod.yaml
+
+    # Git operations
+    - |
+      echo "Push des changements..."
+      git add .
+      git commit -m "Update EBS values: ${TIMESTAMP}" || true
+      git push -f ${MANIFEST_REPO} HEAD:main
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+      allow_failure: false

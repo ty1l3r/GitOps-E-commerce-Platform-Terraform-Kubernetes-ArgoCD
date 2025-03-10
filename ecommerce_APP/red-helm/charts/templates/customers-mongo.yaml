@@ -1,0 +1,83 @@
+{{- if eq .Values.namespace "production" }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongo-customers
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: mongo-customers  # C'est le seul label dont on a besoin pour Velero
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongo-customers  # Doit correspondre au label metadata
+  serviceName: "mongo-customers-service"
+  template:
+    metadata:
+      labels:
+        app: mongo-customers  # Doit correspondre au selector
+    spec:
+      containers:
+        - name: mongo
+          image: mongo:4.4
+          ports:
+            - containerPort: 27017
+          volumeMounts:
+            - name: mongo-customers-storage
+              mountPath: /data/db
+          resources:
+            limits:
+              cpu: {{ .Values.mongoCusto.resources.limits.cpu }}
+              memory: {{ .Values.mongoCusto.resources.limits.memory }}
+            requests:
+              cpu: {{ .Values.mongoCusto.resources.requests.cpu }}
+              memory: {{ .Values.mongoCusto.resources.requests.memory }}
+      volumes:
+        - name: mongo-customers-storage
+          persistentVolumeClaim:
+            claimName: mongo-customers-pvc
+{{- else }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongo-customers
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: mongo-customers
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongo-customers
+  serviceName: "mongo-customers-service"
+  template:
+    metadata:
+      labels:
+        app: mongo-customers
+    spec:
+      containers:
+        - name: mongo
+          image: mongo:4.4
+          ports:
+            - containerPort: 27017
+          volumeMounts:
+            - name: mongo-customers-storage
+              mountPath: /data/db
+          resources:
+            limits:
+              cpu: {{ .Values.mongoCusto.resources.limits.cpu }}
+              memory: {{ .Values.mongoCusto.resources.limits.memory }}
+            requests:
+              cpu: {{ .Values.mongoCusto.resources.requests.cpu }}
+              memory: {{ .Values.mongoCusto.resources.requests.memory }}
+  volumeClaimTemplates:
+    - metadata:
+        name: mongo-customers-storage
+      spec:
+        accessModes: [ "{{ .Values.mongoCusto.storage.accessMode }}" ]
+        resources:
+          requests:
+            storage: {{ .Values.mongoCusto.storage.size }}
+{{- end }}
